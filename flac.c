@@ -22,8 +22,21 @@
 
 #include <FLAC/stream_decoder.h>
 
+#if BYTES_PER_FRAME == 4		
+#define ALIGN8(n) 	(n << 8)		
+#define ALIGN16(n) 	(n)
+#define ALIGN24(n)	(n >> 8) 
+#define ALIGN32(n)	(n >> 16)
+#else
+#define ALIGN8(n) 	(n << 24)		
+#define ALIGN16(n) 	(n << 16)
+#define ALIGN24(n)	(n << 8) 
+#define ALIGN32(n)	(n)
+#endif
+
 struct flac {
 	FLAC__StreamDecoder *decoder;
+	u8_t container;
 #if !LINKALL
 	// FLAC symbols to be dynamically loaded
 	const char **FLAC__StreamDecoderErrorStatusString;
@@ -161,14 +174,14 @@ static FLAC__StreamDecoderWriteStatus write_cb(const FLAC__StreamDecoder *decode
 	while (frames > 0) {
 		frames_t f;
 		frames_t count;
-		s32_t *optr;
+		ISAMPLE_T *optr;
 
 		IF_DIRECT( 
-			optr = (s32_t *)outputbuf->writep; 
+			optr = (ISAMPLE_T *)outputbuf->writep; 
 			f = min(_buf_space(outputbuf), _buf_cont_write(outputbuf)) / BYTES_PER_FRAME; 
 		);
 		IF_PROCESS(
-			optr = (s32_t *)process.inbuf;
+			optr = (ISAMPLE_T *)process.inbuf;
 			f = process.max_in_frames;
 		);
 
@@ -178,23 +191,23 @@ static FLAC__StreamDecoderWriteStatus write_cb(const FLAC__StreamDecoder *decode
 
 		if (bits_per_sample == 8) {
 			while (count--) {
-				*optr++ = *lptr++ << 24;
-				*optr++ = *rptr++ << 24;
+				*optr++ = ALIGN8(*lptr++);
+				*optr++ = ALIGN8(*rptr++);
 			}
 		} else if (bits_per_sample == 16) {
 			while (count--) {
-				*optr++ = *lptr++ << 16;
-				*optr++ = *rptr++ << 16;
+				*optr++ = ALIGN16(*lptr++);
+				*optr++ = ALIGN16(*rptr++);
 			}
 		} else if (bits_per_sample == 24) {
 			while (count--) {
-				*optr++ = *lptr++ << 8;
-				*optr++ = *rptr++ << 8;
+				*optr++ = ALIGN24(*lptr++);
+				*optr++ = ALIGN24(*rptr++);
 			}
 		} else if (bits_per_sample == 32) {
 			while (count--) {
-				*optr++ = *lptr++;
-				*optr++ = *rptr++;
+				*optr++ = ALIGN32(*lptr++);
+				*optr++ = ALIGN32(*rptr++);
 			}
 		} else {
 			LOG_ERROR("unsupported bits per sample: %u", bits_per_sample);
@@ -220,25 +233,30 @@ static void error_cb(const FLAC__StreamDecoder *decoder, FLAC__StreamDecoderErro
 	LOG_INFO("flac error: %s", FLAC_A(f, StreamDecoderErrorStatusString)[status]);
 }
 
+static void flac_close(void) {
+	FLAC(f, stream_decoder_delete, f->decoder);
+	f->decoder = NULL;
+}
+
 static void flac_open(u8_t sample_size, u8_t sample_rate, u8_t channels, u8_t endianness) {
+	if ( f->decoder && f->container != sample_size ) {
+		flac_close();
+	}
+
+	f->container = sample_size;
+
 	if (f->decoder) {
 		FLAC(f, stream_decoder_reset, f->decoder);
 	} else {
 		f->decoder = FLAC(f, stream_decoder_new);
 	}
-
-	if ( sample_size == 'o' ) {
+	
+	if ( f->container == 'o' ) {
 		LOG_DEBUG("ogg/flac container - using init_ogg_stream");
 		FLAC(f, stream_decoder_init_ogg_stream, f->decoder, &read_cb, NULL, NULL, NULL, NULL, &write_cb, NULL, &error_cb, NULL);
-	}
-	else {
+	} else {
 		FLAC(f, stream_decoder_init_stream, f->decoder, &read_cb, NULL, NULL, NULL, NULL, &write_cb, NULL, &error_cb, NULL);
 	}
-}
-
-static void flac_close(void) {
-	FLAC(f, stream_decoder_delete, f->decoder);
-	f->decoder = NULL;
 }
 
 static decode_state flac_decode(void) {

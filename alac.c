@@ -293,7 +293,13 @@ static int read_mp4_header(void) {
 			l->pos += bytes;
 			l->consume = consume - bytes;
 			break;
-		} else {
+		} else if (len > streambuf->size) {
+ 			// can't process an atom larger than streambuf!
+			LOG_ERROR("atom %s too large for buffer %u %u", type, len, streambuf->size);
+			return -1;
+		 } else {
+			 // make sure there is 'len' contiguous space
+			_buf_unwrap(streambuf, len); 
 			break;
 		}
 	}
@@ -333,6 +339,7 @@ static decode_state alac_decode(void) {
 			LOCK_O;
 
 			output.next_sample_rate = decode_newstream(l->sample_rate, output.supported_rates);
+			IF_DSD( output.next_fmt = PCM; )
 			output.track_start = outputbuf->writep;
 			if (output.fade_mode) _checkfade(true);
 			decode.new_stream = false;
@@ -359,7 +366,7 @@ static decode_state alac_decode(void) {
 		return DECODE_COMPLETE;
 	}
 
-	// enough data for coding
+	// is there enough data for decoding
 	if (bytes < block_size) {
 		UNLOCK_S;
 		return DECODE_RUNNING;
@@ -446,15 +453,15 @@ static decode_state alac_decode(void) {
 
 	while (frames > 0) {
 		size_t f, count;
-		s32_t *optr;
+		ISAMPLE_T *optr;
 
 		IF_DIRECT(
 			f = min(frames, _buf_cont_write(outputbuf) / BYTES_PER_FRAME);
-			optr = (s32_t *)outputbuf->writep;
+			optr = (ISAMPLE_T *)outputbuf->writep;
 		);
 		IF_PROCESS(
 			f = min(frames, process.max_in_frames - process.in_frames);
-			optr = (s32_t *)((u8_t *) process.inbuf + process.in_frames * BYTES_PER_FRAME);
+			optr = (ISAMPLE_T *)((u8_t *) process.inbuf + process.in_frames * BYTES_PER_FRAME);
 		);
 
 		f = min(f, frames);
@@ -531,20 +538,20 @@ struct codec *register_alac(void) {
 	static struct codec ret = {
 		'l',            // id
 		"alc",          // types
-		MIN_READ,	    // min read
-		MIN_SPACE,	 	// min space assuming a ratio of 2
+		MIN_READ,	// min read
+		MIN_SPACE,	// min space assuming a ratio of 2
 		alac_open,      // open
 		alac_close,     // close
 		alac_decode,    // decode
 	};
-	
+
 	l =  malloc(sizeof(struct alac));
 	if (!l) {
 		return NULL;
 	}	
-	
+
 	l->decoder = l->chunkinfo = l->stsc = l->block_size = NULL;
-	
+
 	LOG_INFO("using alac to decode alc");
 	return &ret;
 }
