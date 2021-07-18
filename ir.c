@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2021, ralph_irving@hotmail.com
  *  
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -102,10 +102,10 @@ static struct {
 } keymap[] = {
 	{ "KEY_VOLUMEDOWN", 0x768900ff, true  },
 	{ "KEY_VOLUMEUP",   0x7689807f, true  },
-	{ "KEY_PREVIOUS",   0x7689c03f, false },
-	{ "KEY_REWIND",     0x7689c03f, false },
-	{ "KEY_NEXT",       0x7689a05f, false },
-	{ "KEY_FORWARD",    0x7689a05f, false },
+	{ "KEY_PREVIOUS",   0x7689c03f, true  },
+	{ "KEY_REWIND",     0x7689c03f, true  },
+	{ "KEY_NEXT",       0x7689a05f, true  },
+	{ "KEY_FORWARD",    0x7689a05f, true  },
 	{ "KEY_PAUSE",      0x768920df, true  },
 	{ "KEY_PLAY",       0x768910ef, false },
 	{ "KEY_POWER",      0x768940bf, false },
@@ -133,6 +133,7 @@ static struct {
 	{ "KEY_DOWN",       0x7689b04f, true  },
 	{ "KEY_HOME",       0x768922dd, false },
 	{ "KEY_MEDIA_REPEAT", 0x768938c7, false },
+	{ "KEY_AGAIN",      0x768938c7, false },
 //	{ "KEY_TITLE",      0x76897887, false }, // Now Playing
 //	{ "KEY_TITLE",      0x7689a25d, false }, // Now Playing
 //	{ "KEY_TEXT",       0x7689f807, false }, // Size 

@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2020, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2021, ralph_irving@hotmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Additions (c) Paul Hermann, 2015-2017 under the same license terms
+ * Additions (c) Paul Hermann, 2015-2021 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
  */
@@ -127,7 +127,11 @@ static bool pulse_connection_init(pulse_connection *conn) {
 	
 	conn->loop = pa_mainloop_new();
 	pa_mainloop_api *api = pa_mainloop_get_api(conn->loop);
-	conn->ctx = pa_context_new(api, "squeezelite");
+	pa_proplist *proplist = pa_proplist_new();
+	pa_proplist_sets(proplist, PA_PROP_APPLICATION_VERSION, VERSION);
+	conn->ctx = pa_context_new_with_proplist(api, MODEL_NAME_STRING, proplist);
+	pa_proplist_free(proplist);
+
 	conn->readiness = readiness_unknown;
 
 	bool connected = false;
@@ -200,15 +204,16 @@ static void pulse_stream_success_noop_cb(pa_stream *s, int success, void *userda
 }
 
 static bool pulse_stream_create(struct pulse *p) {
-	char name[500];
-	int c = snprintf(name, sizeof(name) - 1, "squeezelite (%s)", "<playername>");
-	name[c] = '\0';
-
 	p->sample_spec.rate = output.current_sample_rate;
 	p->sample_spec.format = PA_SAMPLE_S32LE; // SqueezeLite internally always uses this format, let PulseAudio deal with eventual resampling.
 	p->sample_spec.channels = 2;
 
-	p->stream = pa_stream_new(pulse_connection_get_context(&p->conn), name, &p->sample_spec, (const pa_channel_map *)NULL);
+	pa_proplist *proplist = pa_proplist_new();
+	pa_proplist_sets(proplist, PA_PROP_MEDIA_ROLE, "music");
+	pa_proplist_sets(proplist, PA_PROP_MEDIA_SOFTWARE, "Logitech Media Server");
+
+	p->stream = pa_stream_new_with_proplist(pulse_connection_get_context(&p->conn), "Logitech Media Server stream", &p->sample_spec, (const pa_channel_map *)NULL, proplist);
+	pa_proplist_free(proplist);
 	if (p->stream == NULL)
 		return false;
 
@@ -217,9 +222,9 @@ static bool pulse_stream_create(struct pulse *p) {
 
 	if (pa_stream_connect_playback(p->stream, p->sink_name, (const pa_buffer_attr *)NULL,
 #if PULSEAUDIO_TIMING == 2
-		PA_STREAM_AUTO_TIMING_UPDATE | PA_STREAM_INTERPOLATE_TIMING,
+		PA_STREAM_VARIABLE_RATE | PA_STREAM_AUTO_TIMING_UPDATE | PA_STREAM_INTERPOLATE_TIMING,
 #else
-	 	PA_STREAM_NOFLAGS,
+		PA_STREAM_VARIABLE_RATE,
 #endif
 		(const pa_cvolume *)NULL, (pa_stream *)NULL) < 0) {
 		pa_stream_unref(p->stream);
@@ -325,6 +330,19 @@ void set_volume(unsigned left, unsigned right) {
 	}
 }
 
+void set_sample_rate(uint32_t sample_rate) {
+	pa_operation *op = pa_stream_update_sample_rate(pulse.stream, sample_rate, NULL, NULL);
+	if (op != NULL) {
+		if (loglevel >= lDEBUG) {
+			LOG_DEBUG("stream sample rate set to %d Hz", sample_rate);
+		}
+		pa_operation_unref(op);
+	}
+	else {
+		LOG_WARN("failed to set stream sample rate to %d Hz", sample_rate);
+	}
+}
+
 struct test_open_data {
 	unsigned *rates;
 	bool userdef_rates;
@@ -344,8 +362,9 @@ static void pulse_sinkinfo_cb(pa_context *c, const pa_sink_info *l, int eol, voi
 		d->default_sink_name = strdup(l->name);
 
 	if (!d->userdef_rates) {
-		d->rates[0] = l->sample_spec.rate;
+		d->rates[0] = PA_RATE_MAX;
 	}
+	output.default_sample_rate = l->sample_spec.rate;
 
 	*d->sample_spec = l->sample_spec;
 }
@@ -368,7 +387,7 @@ bool test_open(const char *device, unsigned rates[], bool userdef_rates) {
 	return true;
 }
 
-static int _write_frames(frames_t out_frames, bool silence, s32_t gainL, s32_t gainR,
+static int _write_frames(frames_t out_frames, bool silence, s32_t gainL, s32_t gainR, u8_t flags,
 						 s32_t cross_gain_in, s32_t cross_gain_out, s32_t **cross_ptr) {
 	pa_stream_write(pulse.stream, silence ? silencebuf : outputbuf->readp, out_frames * BYTES_PER_FRAME, (pa_free_cb_t)NULL, 0, PA_SEEK_RELATIVE);
 	return (int)out_frames;

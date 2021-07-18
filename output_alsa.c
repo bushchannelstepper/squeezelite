@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2021, ralph_irving@hotmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Additions (c) Paul Hermann, 2015-2017 under the same license terms
+ * Additions (c) Paul Hermann, 2015-2021 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
  */
@@ -547,7 +547,7 @@ static int alsa_open(const char *device, unsigned sample_rate, unsigned alsa_buf
 	return 0;
 }
 
-static int _write_frames(frames_t out_frames, bool silence, s32_t gainL, s32_t gainR,
+static int _write_frames(frames_t out_frames, bool silence, s32_t gainL, s32_t gainR, u8_t flags,
 						 s32_t cross_gain_in, s32_t cross_gain_out, s32_t **cross_ptr) {
 
 	const snd_pcm_channel_area_t *areas;
@@ -594,17 +594,14 @@ static int _write_frames(frames_t out_frames, bool silence, s32_t gainL, s32_t g
 
 		outputptr = alsa.mmap ? (areas[0].addr + (areas[0].first + offset * areas[0].step) / 8) : alsa.write_buf;
 
-		_scale_and_pack_frames(outputptr, inputptr, out_frames, gainL, gainR, output.format);
+		_scale_and_pack_frames(outputptr, inputptr, out_frames, gainL, gainR, flags, output.format);
 
 	} else {
 
 		outputptr = (void *)inputptr;
 
 		if (!silence) {
-
-			if (gainL != FIXED_ONE || gainR!= FIXED_ONE) {
-				_apply_gain(outputbuf, out_frames, gainL, gainR);
-			}
+			_apply_gain(outputbuf, out_frames, gainL, gainR, flags);
 		}
 	}
 
@@ -676,11 +673,9 @@ static void *output_thread(void *arg) {
 #if GPIO
 			// Wake up amp
 			if (gpio_active) { 
-				ampstate = 1;
 				relay(1);
 			}
 			if (power_script != NULL) {
-				ampstate = 1;
 				relay_script(1);
 			}
 #endif
@@ -810,11 +805,9 @@ static void *output_thread(void *arg) {
 #if GPIO
 			//  Put Amp to Sleep
 			if (gpio_active){
-				ampstate = 0;
 				relay(0);
 			}
 			if (power_script != NULL ){
-				ampstate = 0;
 				relay_script(0);
 			}
 #endif

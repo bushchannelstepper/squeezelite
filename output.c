@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2021, ralph_irving@hotmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -47,6 +47,7 @@ frames_t _output_frames(frames_t avail) {
 
 	frames_t frames, size;
 	bool silence;
+	u8_t flags = output.channels;
 	
 	s32_t cross_gain_in = 0, cross_gain_out = 0; s32_t *cross_ptr = NULL;
 	
@@ -59,7 +60,7 @@ frames_t _output_frames(frames_t avail) {
 	silence = false;
 
 	// start when threshold met
-	if (output.state == OUTPUT_BUFFER && frames > output.threshold * output.next_sample_rate / 10 && frames > output.start_frames) {
+	if (output.state == OUTPUT_BUFFER && (frames * BYTES_PER_FRAME) > output.threshold * output.next_sample_rate / 10 && frames > output.start_frames) {
 		output.state = OUTPUT_RUNNING;
 		LOG_INFO("start buffer frames: %u", frames);
 		wake_controller();
@@ -127,6 +128,9 @@ frames_t _output_frames(frames_t avail) {
 				unsigned delay = 0;
 				if (output.current_sample_rate != output.next_sample_rate) {
 					delay = output.rate_delay;
+#if PULSEAUDIO
+					set_sample_rate(output.next_sample_rate);
+#endif
 				}
 				IF_DSD(
 				   if (output.outfmt != output.next_fmt) {
@@ -253,8 +257,14 @@ frames_t _output_frames(frames_t avail) {
 		}
 		
 		out_frames = !silence ? min(size, cont_frames) : size;
+		
+		IF_DSD(
+			if (output.outfmt != PCM) {
+				flags = 0;
+			}
+		)
 
-		wrote = output.write_cb(out_frames, silence, gainL, gainR, cross_gain_in, cross_gain_out, &cross_ptr);
+		wrote = output.write_cb(out_frames, silence, gainL, gainR, flags, cross_gain_in, cross_gain_out, &cross_ptr);
 
 		if (wrote <= 0) {
 			frames -= size;
@@ -438,6 +448,7 @@ void output_flush(void) {
 	output.fade = FADE_INACTIVE;
 	if (output.state != OUTPUT_OFF) {
 		output.state = OUTPUT_STOPPED;
+		output.stop_time = gettime_ms();
 		if (output.error_opening) {
 			output.current_sample_rate = output.default_sample_rate;
 		}

@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2021, ralph_irving@hotmail.com
  *  
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,7 +17,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
- * Additions (c) Paul Hermann, 2015-2017 under the same license terms
+ * Additions (c) Paul Hermann, 2015-2021 under the same license terms
  *   -Control of Raspberry pi GPIO for amplifier power
  *   -Launch script on power status change from LMS
  */
@@ -25,8 +25,8 @@
 // make may define: PORTAUDIO, SELFPIPE, RESAMPLE, RESAMPLE_MP, VISEXPORT, GPIO, IR, DSD, LINKALL to influence build
 
 #define MAJOR_VERSION "1.9"
-#define MINOR_VERSION "7"
-#define MICRO_VERSION "1264"
+#define MINOR_VERSION "9"
+#define MICRO_VERSION "1386"
 
 #if defined(CUSTOM_VERSION)
 #define VERSION "v" MAJOR_VERSION "." MINOR_VERSION "-" MICRO_VERSION STR(CUSTOM_VERSION)
@@ -540,7 +540,7 @@ struct streamstate {
 void stream_init(log_level level, unsigned stream_buf_size);
 void stream_close(void);
 void stream_file(const char *header, size_t header_len, unsigned threshold);
-void stream_sock(u32_t ip, u16_t port, const char *header, size_t header_len, unsigned threshold, bool cont_wait);
+void stream_sock(u32_t ip, u16_t port, bool use_ssl, const char *header, size_t header_len, unsigned threshold, bool cont_wait);
 bool stream_disconnect(void);
 
 // decode.c
@@ -615,12 +615,15 @@ typedef enum { FADE_INACTIVE = 0, FADE_DUE, FADE_ACTIVE } fade_state;
 typedef enum { FADE_UP = 1, FADE_DOWN, FADE_CROSS } fade_dir;
 typedef enum { FADE_NONE = 0, FADE_CROSSFADE, FADE_IN, FADE_OUT, FADE_INOUT } fade_mode;
 
+#define MONO_RIGHT	0x02
+#define MONO_LEFT	0x01
 #define MAX_SUPPORTED_SAMPLERATES 18
 #define TEST_RATES = { 768000, 705600, 384000, 352800, 192000, 176400, 96000, 88200, 48000, 44100, 32000, 24000, 22500, 16000, 12000, 11025, 8000, 0 }
 
 struct outputstate {
 	output_state state;
 	output_format format;
+	u8_t channels;
 	const char *device;
 #if ALSA
 	unsigned buffer;
@@ -632,7 +635,7 @@ struct outputstate {
 	unsigned latency;
 	int pa_hostapi_option;
 #endif
-	int (* write_cb)(frames_t out_frames, bool silence, s32_t gainL, s32_t gainR, s32_t cross_gain_in, s32_t cross_gain_out, s32_t **cross_ptr);
+	int (* write_cb)(frames_t out_frames, bool silence, s32_t gainL, s32_t gainR, u8_t flags, s32_t cross_gain_in, s32_t cross_gain_out, s32_t **cross_ptr);
 	unsigned start_frames;
 	unsigned frames_played;
 	unsigned frames_played_dmp;// frames played at the point delay is measured
@@ -705,6 +708,7 @@ void _pa_open(void);
 #if PULSEAUDIO
 void list_devices(void);
 void set_volume(unsigned left, unsigned right);
+void set_sample_rate(uint32_t sample_rate);
 bool test_open(const char *device, unsigned rates[], bool userdef_rates);
 void output_init_pulse(log_level level, const char *device, unsigned output_buf_size, char *params, unsigned rates[], unsigned rate_delay, unsigned idle);
 void output_close_pulse(void);
@@ -715,9 +719,9 @@ void output_init_stdout(log_level level, unsigned output_buf_size, char *params,
 void output_close_stdout(void);
 
 // output_pack.c
-void _scale_and_pack_frames(void *outputptr, s32_t *inputptr, frames_t cnt, s32_t gainL, s32_t gainR, output_format format);
+void _scale_and_pack_frames(void *outputptr, s32_t *inputptr, frames_t cnt, s32_t gainL, s32_t gainR, u8_t flags, output_format format);
 void _apply_cross(struct buffer *outputbuf, frames_t out_frames, s32_t cross_gain_in, s32_t cross_gain_out, s32_t **cross_ptr);
-void _apply_gain(struct buffer *outputbuf, frames_t count, s32_t gainL, s32_t gainR);
+void _apply_gain(struct buffer *outputbuf, frames_t count, s32_t gainL, s32_t gainR, u8_t flags);
 s32_t gain(s32_t gain, s32_t sample);
 s32_t to_gain(float f);
 
@@ -758,16 +762,15 @@ struct codec *register_ff(const char *codec);
 struct codec *register_opus(void);
 #endif
 
-//gpio.c
+// gpio.c
 #if GPIO
-void relay( int state);
+void relay(int state);
 void relay_script(int state);
 int gpio_pin;
 bool gpio_active_low;
 bool gpio_active;
 char *power_script;
-//  my amp state
-int ampstate;
+
 #if RPI
 #define PI_INPUT  0
 #define PI_OUTPUT 1

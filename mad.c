@@ -2,7 +2,7 @@
  *  Squeezelite - lightweight headless squeezebox emulator
  *
  *  (c) Adrian Smith 2012-2015, triode1@btinternet.com
- *      Ralph Irving 2015-2017, ralph_irving@hotmail.com
+ *      Ralph Irving 2015-2021, ralph_irving@hotmail.com
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -347,6 +347,12 @@ static void mad_open(u8_t size, u8_t rate, u8_t chan, u8_t endianness) {
 	m->samples = 0;
 	m->readbuf_len = 0;
 	m->last_error = MAD_ERROR_NONE;
+
+	// explicitly clear before calling mad_*_init (again) to free the malloc'd memory
+	MAD(m, stream_finish, &m->stream);
+	MAD(m, frame_finish, &m->frame);
+	mad_synth_finish(&m->synth);
+
 	MAD(m, stream_init, &m->stream);
 	MAD(m, frame_init, &m->frame);
 	MAD(m, synth_init, &m->synth);
@@ -402,7 +408,7 @@ struct codec *register_mad(void) {
 		mad_decode,   // decode
 	};
 
-	m = malloc(sizeof(struct mad));
+	m = calloc(1, sizeof(struct mad));
 	if (!m) {
 		return NULL;
 	}
